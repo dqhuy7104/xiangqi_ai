@@ -1,3 +1,4 @@
+
 import copy
 
 from src.const import *
@@ -33,12 +34,13 @@ class Board:
         return move in piece.moves_rival or move in piece.moves_empty
 
     def checkmate(self, piece, move):
-        # Giả lập bàn cờ sau khi đi nước "move"
+        """Check if making this move would put own king in check"""
+        # Simulate the board after making the move
         temp_board = copy.deepcopy(self)
         temp_piece = copy.deepcopy(piece)
         temp_board.move(temp_piece, move)
 
-        # Tìm tướng bên mình sau nước đi
+        # Find own general after the move
         general_row, general_col = None, None
         for r in range(ROWS):
             for c in range(COLS):
@@ -47,7 +49,10 @@ class Board:
                     general_row, general_col = r, c
                     break
 
-        # Kiểm tra quân địch có thể ăn tướng không
+        if general_row is None:
+            return True  # General captured, invalid move
+
+        # Check if any enemy piece can capture the general
         for r in range(ROWS):
             for c in range(COLS):
                 if temp_board.squares[r][c].has_rival_piece(piece.color):
@@ -55,15 +60,92 @@ class Board:
                     temp_board.cal_move(enemy, r, c, bool=False)
                     for m in enemy.moves_rival:
                         if m.final.row == general_row and m.final.col == general_col:
-                            return True  # tướng bị chiếu
+                            return True  # General would be in check
+                    enemy.clear_moves()
 
-        return False  # an toàn
+        return False  # Safe move
+
+    def is_in_check(self, color):
+        """Check if the general of given color is currently in check"""
+        # Find the general
+        general_row, general_col = None, None
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.squares[r][c].piece
+                if isinstance(piece, General) and piece.color == color:
+                    general_row, general_col = r, c
+                    break
+        
+        if general_row is None:
+            return True  # General not found (captured)
+        
+        # Check if any opponent piece can attack the general
+        opponent_color = 'black' if color == 'red' else 'red'
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.squares[r][c].piece
+                if piece is not None and piece.color == opponent_color:
+                    self.cal_move(piece, r, c, bool=False)
+                    for move in piece.moves_rival:
+                        if move.final.row == general_row and move.final.col == general_col:
+                            piece.clear_moves()
+                            return True
+                    piece.clear_moves()
+        
+        return False
+
+    def is_checkmate(self, color):
+        """Check if the given color is in checkmate"""
+        if not self.is_in_check(color):
+            return False
+        
+        # Try all possible moves to see if any can escape check
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.squares[r][c].piece
+                if piece is not None and piece.color == color:
+                    self.cal_move(piece, r, c)
+                    
+                    # Try each possible move
+                    for move in piece.moves_empty + piece.moves_rival:
+                        # Make a copy of the board and try the move
+                        temp_board = copy.deepcopy(self)
+                        temp_piece = temp_board.squares[move.initial.row][move.initial.col].piece
+                        temp_board.move(temp_piece, move)
+                        
+                        # Check if this move gets out of check
+                        if not temp_board.is_in_check(color):
+                            piece.clear_moves()
+                            return False  # Found a move that escapes check
+                    
+                    piece.clear_moves()
+        
+        return True  # No moves can escape check
+
+    def has_legal_moves(self, color):
+        """Check if the given color has any legal moves"""
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.squares[r][c].piece
+                if piece is not None and piece.color == color:
+                    self.cal_move(piece, r, c)
+                    
+                    # Check if any move is legal (doesn't put own king in check)
+                    for move in piece.moves_empty + piece.moves_rival:
+                        if not self.checkmate(piece, move):
+                            piece.clear_moves()
+                            return True
+                    
+                    piece.clear_moves()
+        
+        return False
 
     def general_facing_each_other(self):
+        """Check if the two generals are facing each other directly"""
         red_pos = None
         black_pos = None
 
-        # Tìm vị trí 2 tướng
+        # Find positions of both generals
         for r in range(ROWS):
             for c in range(COLS):
                 piece = self.squares[r][c].piece
@@ -73,16 +155,15 @@ class Board:
                     elif piece.color == 'black':
                         black_pos = (r, c)
 
-        if red_pos and black_pos and red_pos[1] == black_pos[1]:  # cùng cột
+        if red_pos and black_pos and red_pos[1] == black_pos[1]:  # Same column
             col = red_pos[1]
             start = min(red_pos[0], black_pos[0]) + 1
             end = max(red_pos[0], black_pos[0])
             for r in range(start, end):
                 if not self.squares[r][col].is_empty():
-                    return False  # Có quân chặn giữa → không đối mặt
-            return True  # Không có quân chặn → tướng đối mặt
+                    return False  # Piece blocking between generals
+            return True  # No pieces blocking, generals face each other
         return False
-
 
     def cal_move(self, piece, row, col, bool=True):
         # Calculate all the posible valid moves of an specific piece
