@@ -3,12 +3,24 @@ import pygame
 import sys
 import threading
 import time
+import argparse
 
 from src.const import *
 from src.game import Game
 from src.square import Square
 from src.move import Move
 from ai_agent import XiangqiAgent, XiangqiEnvironment
+
+parser = argparse.ArgumentParser(description="Người chơi chọn phe")
+
+# Add argument
+parser.add_argument('-a', '--ai', type=str, default='black', choices=['red', 'black'])
+parser.add_argument('-p', '--player', type=str, default='red', choices=['red', 'black'])
+args = parser.parse_args()
+
+# Make sure ai and player have opposite side
+args.player = 'black' if args.ai == 'red' else 'red'
+args.ai = 'red' if args.player == 'black' else 'black'
 
 # Main class 
 class Main:
@@ -20,12 +32,12 @@ class Main:
         
         # AI setup
         self.ai_environment = XiangqiEnvironment()
-        self.ai_agent = XiangqiAgent('black')  # AI plays as black
-        self.human_color = 'red'  # Human plays as red
+        self.ai_agent = XiangqiAgent(args.ai)  # AI plays as black
+        self.human_color =  args.player  # Human plays as red
         
         # Try to load pre-trained model
         try:
-            self.ai_agent.load_model('models/final/black_agent.pth')
+            self.ai_agent.load_model('models/final/red_agent.pth')
             print("Loaded pre-trained AI model")
         except:
             print("No pre-trained model found, using random AI")
@@ -62,7 +74,7 @@ class Main:
             self.sync_ai_environment()
             
             # Get AI's legal moves
-            legal_moves = self.ai_environment.get_legal_moves('black')
+            legal_moves = self.ai_environment.get_legal_moves(args.ai)
             
             if legal_moves:
                 # AI chooses move
@@ -85,7 +97,7 @@ class Main:
             
             # Validate move
             piece = self.game.board.squares[move.initial.row][move.initial.col].piece
-            if piece and piece.color == 'black':
+            if piece and piece.color == args.ai:
                 self.game.board.cal_move(piece, move.initial.row, move.initial.col, bool=True)
                 
                 if self.game.board.valid_move(piece, move):
@@ -110,7 +122,7 @@ class Main:
         
         # Show whose turn it is
         turn_text = f"Current player: {self.game.next_player.upper()}"
-        if self.game.next_player == 'red':
+        if self.game.next_player == args.player:
             turn_text += " (Human)"
         else:
             turn_text += " (AI)"
@@ -128,7 +140,7 @@ class Main:
             for col in range(COLS):
                 piece = self.game.board.squares[row][col].piece
                 if piece and piece.name == 'general':
-                    if piece.color == 'red':
+                    if piece.color == args.player:
                         red_general_exists = True
                     else:
                         black_general_exists = True
@@ -144,10 +156,10 @@ class Main:
         """Draw game over screen"""
         font = pygame.font.Font(None, 72)
         
-        if winner == 'red':
+        if winner == args.player:
             text = "Human Wins!"
             color = (0, 255, 0)
-        elif winner == 'black':
+        elif winner == args.ai:
             text = "AI Wins!"
             color = (255, 0, 0)
         else:
@@ -174,104 +186,208 @@ class Main:
 
     def main_loop(self):
         # Show board background
-        game = self.game
-        screen = self.screen
-        board = self.game.board
-        dragger = self.game.dragger
-        
-        game_winner = None
-        clock = pygame.time.Clock()
+        if args.ai == 'black':
 
-        while True:
-            # Handle events
-            for event in pygame.event.get():
-                if event.type == pygame.MOUSEBUTTONDOWN and not game_winner:
-                    # Only allow human moves when it's red's turn and not AI thinking
-                    if game.next_player == self.human_color and not self.ai_thinking:
-                        dragger.update_mouse(event.pos)
+            game = self.game
+            screen = self.screen
+            board = self.game.board
+            dragger = self.game.dragger
+            
+            game_winner = None
+            clock = pygame.time.Clock()
 
-                        clicked_row = dragger.mouseY // SQSIZEY
-                        clicked_col = dragger.mouseX // SQSIZEX
+            while True:
+                # Handle events
+                for event in pygame.event.get():
+                    if event.type == pygame.MOUSEBUTTONDOWN and not game_winner:
+                        # Only allow human moves when it's red's turn and not AI thinking
+                        if game.next_player == self.human_color and not self.ai_thinking:
+                            dragger.update_mouse(event.pos)
 
-                        if board.squares[clicked_row][clicked_col].has_piece():
-                            piece = board.squares[clicked_row][clicked_col].piece
-                            if piece.color == game.next_player:
-                                board.cal_move(piece, clicked_row, clicked_col, bool=True)
-                                dragger.save_initial(event.pos)
-                                dragger.drag_piece(piece)
+                            clicked_row = dragger.mouseY // SQSIZEY
+                            clicked_col = dragger.mouseX // SQSIZEX
 
-                elif event.type == pygame.MOUSEMOTION and not game_winner:
-                    if dragger.dragging and game.next_player == self.human_color:
-                        dragger.update_mouse(event.pos)
+                            if board.squares[clicked_row][clicked_col].has_piece():
+                                piece = board.squares[clicked_row][clicked_col].piece
+                                if piece.color == game.next_player:
+                                    board.cal_move(piece, clicked_row, clicked_col, bool=True)
+                                    dragger.save_initial(event.pos)
+                                    dragger.drag_piece(piece)
 
-                elif event.type == pygame.MOUSEBUTTONUP and not game_winner:
-                    if dragger.dragging and game.next_player == self.human_color:
-                        dragger.update_mouse(event.pos)
+                    elif event.type == pygame.MOUSEMOTION and not game_winner:
+                        if dragger.dragging and game.next_player == self.human_color:
+                            dragger.update_mouse(event.pos)
 
-                        released_row = dragger.mouseY // SQSIZEY
-                        released_col = dragger.mouseX // SQSIZEX
+                    elif event.type == pygame.MOUSEBUTTONUP and not game_winner:
+                        if dragger.dragging and game.next_player == self.human_color:
+                            dragger.update_mouse(event.pos)
 
-                        # Create move
-                        initial = Square(dragger.initial_row, dragger.initial_col)
-                        final = Square(released_row, released_col)
-                        move = Move(initial, final)
+                            released_row = dragger.mouseY // SQSIZEY
+                            released_col = dragger.mouseX // SQSIZEX
 
-                        if board.valid_move(dragger.piece, move):
-                            captured = board.squares[released_row][released_col].has_piece()
-                            board.move(dragger.piece, move)
+                            # Create move
+                            initial = Square(dragger.initial_row, dragger.initial_col)
+                            final = Square(released_row, released_col)
+                            move = Move(initial, final)
 
-                            # sounds
-                            game.play_sound(captured)
-                            game.next_play()
+                            if board.valid_move(dragger.piece, move):
+                                captured = board.squares[released_row][released_col].has_piece()
+                                board.move(dragger.piece, move)
 
-                            # After human move, trigger AI move
-                            if game.next_player == 'black':
-                                self.ai_make_move()
+                                # sounds
+                                game.play_sound(captured)
+                                game.next_play()
 
-                    dragger.undrag_piece()
+                                # After human move, trigger AI move
+                                if game.next_player == args.ai:
+                                    self.ai_make_move()
 
-                elif event.type == pygame.KEYDOWN:
-                    # Reset game
-                    if event.key == pygame.K_r:
-                        game.reset()
-                        game = self.game
-                        board = self.game.board
-                        dragger = self.game.dragger
-                        game_winner = None
-                        self.ai_thinking = False
-                        self.pending_ai_move = None
+                        dragger.undrag_piece()
 
-                # Quit app     
-                elif event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    elif event.type == pygame.KEYDOWN:
+                        # Reset game
+                        if event.key == pygame.K_r:
+                            game.reset()
+                            game = self.game
+                            board = self.game.board
+                            dragger = self.game.dragger
+                            game_winner = None
+                            self.ai_thinking = False
+                            self.pending_ai_move = None
 
-            # Execute pending AI move
-            if self.pending_ai_move and not self.ai_thinking:
-                self.execute_ai_move()
+                    # Quit app     
+                    elif event.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
 
-            # Check for game over
-            if not game_winner:
-                game_winner = self.check_game_over()
+                # Execute pending AI move
+                if self.pending_ai_move and not self.ai_thinking:
+                    self.execute_ai_move()
 
-            # Draw everything
-            game.show_board(screen)
-            game.show_moves(screen)
-            game.show_last_move(screen)
-            game.show_pieces(screen)
+                # Check for game over
+                if not game_winner:
+                    game_winner = self.check_game_over()
 
-            if dragger.dragging:
-                dragger.update_blit(screen)
+                # Draw everything
+                game.show_board(screen)
+                game.show_moves(screen)
+                game.show_last_move(screen)
+                game.show_pieces(screen)
 
-            # Draw AI status
-            self.draw_ai_status()
+                if dragger.dragging:
+                    dragger.update_blit(screen)
 
-            # Draw game over screen
-            if game_winner:
-                self.draw_game_over(game_winner)
+                # Draw AI status
+                self.draw_ai_status()
 
-            pygame.display.update()
-            clock.tick(60)  # 60 FPS
+                # Draw game over screen
+                if game_winner:
+                    self.draw_game_over(game_winner)
+
+                pygame.display.update()
+                clock.tick(60)  # 60 FPS
+
+        else:
+            game = self.game
+            screen = self.screen
+            board = self.game.board
+            dragger = self.game.dragger
+            
+            game_winner = None
+            clock = pygame.time.Clock()
+
+            self.ai_make_move()
+
+            while True:
+                # Handle events
+                for event in pygame.event.get():
+                    if event.type == pygame.MOUSEBUTTONDOWN and not game_winner:
+                        # Only allow human moves when it's red's turn and not AI thinking
+                        if game.next_player == self.human_color and not self.ai_thinking:
+                            dragger.update_mouse(event.pos)
+
+                            clicked_row = dragger.mouseY // SQSIZEY
+                            clicked_col = dragger.mouseX // SQSIZEX
+
+                            if board.squares[clicked_row][clicked_col].has_piece():
+                                piece = board.squares[clicked_row][clicked_col].piece
+                                if piece.color == game.next_player:
+                                    board.cal_move(piece, clicked_row, clicked_col, bool=True)
+                                    dragger.save_initial(event.pos)
+                                    dragger.drag_piece(piece)
+
+                    elif event.type == pygame.MOUSEMOTION and not game_winner:
+                        if dragger.dragging and game.next_player == self.human_color:
+                            dragger.update_mouse(event.pos)
+
+                    elif event.type == pygame.MOUSEBUTTONUP and not game_winner:
+                        if dragger.dragging and game.next_player == self.human_color:
+                            dragger.update_mouse(event.pos)
+
+                            released_row = dragger.mouseY // SQSIZEY
+                            released_col = dragger.mouseX // SQSIZEX
+
+                            # Create move
+                            initial = Square(dragger.initial_row, dragger.initial_col)
+                            final = Square(released_row, released_col)
+                            move = Move(initial, final)
+
+                            if board.valid_move(dragger.piece, move):
+                                captured = board.squares[released_row][released_col].has_piece()
+                                board.move(dragger.piece, move)
+
+                                # sounds
+                                game.play_sound(captured)
+                                game.next_play()
+
+                                # After human move, trigger AI move
+                                if game.next_player == args.ai:
+                                    self.ai_make_move()
+
+                        dragger.undrag_piece()
+
+                    elif event.type == pygame.KEYDOWN:
+                        # Reset game
+                        if event.key == pygame.K_r:
+                            game.reset()
+                            game = self.game
+                            board = self.game.board
+                            dragger = self.game.dragger
+                            game_winner = None
+                            self.ai_thinking = False
+                            self.pending_ai_move = None
+
+                    # Quit app     
+                    elif event.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
+
+                # Execute pending AI move
+                if self.pending_ai_move and not self.ai_thinking:
+                    self.execute_ai_move()
+
+                # Check for game over
+                if not game_winner:
+                    game_winner = self.check_game_over()
+
+                # Draw everything
+                game.show_board(screen)
+                game.show_moves(screen)
+                game.show_last_move(screen)
+                game.show_pieces(screen)
+
+                if dragger.dragging:
+                    dragger.update_blit(screen)
+
+                # Draw AI status
+                self.draw_ai_status()
+
+                # Draw game over screen
+                if game_winner:
+                    self.draw_game_over(game_winner)
+
+                pygame.display.update()
+                clock.tick(60)  # 60 FPS
 
 if __name__ == "__main__":
     main = Main()
