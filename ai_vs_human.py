@@ -285,7 +285,6 @@ class Main:
                     self.draw_game_over(game_winner)
 
                 pygame.display.update()
-                clock.tick(60)  # 60 FPS
 
         else:
             game = self.game
@@ -387,7 +386,7 @@ class Main:
                     self.draw_game_over(game_winner)
 
                 pygame.display.update()
-                clock.tick(60)  # 60 FPS
+                clock.tick(1)  
 
 if __name__ == "__main__":
     main = Main()

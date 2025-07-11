@@ -7,6 +7,7 @@ import copy
 from collections import deque
 import pickle
 import os
+import argparse
 from typing import List, Tuple, Optional
 
 from src.board import Board
@@ -14,247 +15,23 @@ from src.piece import *
 from src.move import Move
 from src.square import Square
 from src.const import *
+from ai_agent import XiangqiEnvironment
+from ai_agent import DQN
 
-class XiangqiEnvironment:
-    """Environment wrapper for Xiangqi game"""
-    
-    def __init__(self):
-        self.board = Board()
-        self.current_player = 'red'
-        self.game_over = False
-        self.winner = None
-        self.move_count = 0
-        self.max_moves = 1000  # Maximum moves before draw
-        
-    def reset(self):
-        """Reset the game to initial state"""
-        self.board = Board()
-        self.current_player = 'red'
-        self.game_over = False
-        self.winner = None
-        self.move_count = 0
-        return self.get_state()
-    
-    def get_state(self) -> np.ndarray:
-        """Convert board state to neural network input"""
-        # Create 10x9x14 tensor (10 rows, 9 cols, 14 channels for different pieces)
-        state = np.zeros((10, 9, 14), dtype=np.float32)
-        
-        piece_to_channel = {
-            'general': 0, 'advisor': 1, 'elephant': 2, 'horse': 3,
-            'chariot': 4, 'cannon': 5, 'pawn': 6
-        }
-        
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = self.board.squares[row][col].piece
-                if piece is not None:
-                    channel = piece_to_channel[piece.name]
-                    if piece.color == 'red':
-                        state[row, col, channel] = 1.0
-                    else:
-                        state[row, col, channel + 7] = 1.0
-        
-        return state.flatten()
-    
-    def get_legal_moves(self, color: str) -> List[Move]:
-        """Get all legal moves for a color"""
-        legal_moves = []
-        
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = self.board.squares[row][col].piece
-                if piece is not None and piece.color == color:
-                    self.board.cal_move(piece, row, col)
-                    legal_moves.extend(piece.moves_empty + piece.moves_rival)
-                    piece.clear_moves()
-        
-        return legal_moves
-    
-    def make_move(self, move: Move, cur_move):
-        """Make a move and return new state, reward, and done flag"""
-        if not self.is_valid_move(move):
-            return self.get_state(), -10, True  # Invalid move penalty
-        
-        # Check if move captures a piece
-        captured_piece = self.board.squares[move.final.row][move.final.col].piece
-        
-        # Make the move
-        piece = self.board.squares[move.initial.row][move.initial.col].piece
-        self.board.move(piece, move)
-        
-        self.move_count += 1
-        
-        # Calculate reward
-        reward = self.calculate_reward(captured_piece, cur_move)
-        
-        # Check for game over conditions
-        done = self.check_game_over()
-        
-        # Switch player
-        self.current_player = 'black' if self.current_player == 'red' else 'red'
-        
-        return self.get_state(), reward, done
-    
-    def is_valid_move(self, move: Move) -> bool:
-        """Check if a move is valid"""
-        piece = self.board.squares[move.initial.row][move.initial.col].piece
-        if piece is None or piece.color != self.current_player:
-            return False
-        
-        self.board.cal_move(piece, move.initial.row, move.initial.col)
-        valid = move in piece.moves_empty or move in piece.moves_rival
-        piece.clear_moves()
-        
-        return valid
-    
-    def calculate_reward(self, captured_piece, cur_move) -> float:
-        """Calculate reward for the current move"""
-        reward = 0
-        
-        # Reward for capturing pieces
-        if captured_piece is not None:
-            piece_values = {
-                'general': 1000, 'advisor': 20, 'elephant': 20, 'horse': 40,
-                'chariot': 90, 'cannon': 50, 'pawn': 10
-            }
-            reward += piece_values.get(captured_piece.name, 0)
-        
-        # Small reward for making a move (to encourage activity)
-        reward += 0.1
-        
-        # Check if opponent is in checkmate after this move
-        if cur_move < 200:
-            opponent = 'black' if self.current_player == 'red' else 'red'
-            if self.is_checkmate(opponent):
-                reward += 1000
-            elif self.is_in_check(opponent):
-                reward += 1  # Reward for putting opponent in check
-        elif 200 <= cur_move < 1000:
-            opponent = 'black' if self.current_player == 'red' else 'red'
-            if self.is_checkmate(opponent):
-                reward += 1000
-            elif self.is_in_check(opponent):
-                reward += 0 # Reward for putting opponent in check
-            else:
-                reward -= 0.2
-        return reward
-    
-    def check_game_over(self) -> bool:
-        """Check if the game is over"""
-        # Check for maximum moves (draw)
-        if self.move_count >= self.max_moves:
-            self.game_over = True
-            self.winner = None  # Draw
-            return True
-        
-        # Check if current player (who just moved) has won
-        opponent = 'black' if self.current_player == 'red' else 'red'
-        
-        if self.is_checkmate(opponent):
-            self.game_over = True
-            self.winner = self.current_player  # Current player wins
-            return True
-        
-        # Check for stalemate (no legal moves but not in check)
-        if len(self.get_legal_moves(opponent)) == 0:
-            if not self.is_in_check(opponent):
-                self.game_over = True
-                self.winner = None  # Draw due to stalemate
-                return True
-        
-        return False
-    
-    def is_checkmate(self, color: str) -> bool:
-        """Check if a color is in checkmate"""
-        if not self.is_in_check(color):
-            return False
-        
-        # Try all possible moves to see if any can escape check
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = self.board.squares[row][col].piece
-                if piece is not None and piece.color == color:
-                    self.board.cal_move(piece, row, col)
-                    
-                    # Try each possible move
-                    for move in piece.moves_empty + piece.moves_rival:
-                        # Make a copy of the board and try the move
-                        temp_board = copy.deepcopy(self.board)
-                        temp_piece = temp_board.squares[move.initial.row][move.initial.col].piece
-                        temp_board.move(temp_piece, move)
-                        
-                        # Check if this move gets out of check
-                        if not self.is_in_check_on_board(temp_board, color):
-                            piece.clear_moves()
-                            return False  # Found a move that escapes check
-                    
-                    piece.clear_moves()
-        
-        return True  # No moves can escape check
-    
-    def is_in_check(self, color: str) -> bool:
-        """Check if a color's general is in check"""
-        return self.is_in_check_on_board(self.board, color)
-    
-    def is_in_check_on_board(self, board: Board, color: str) -> bool:
-        """Check if a color's general is in check on a given board"""
-        # Find general position
-        general_pos = None
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = board.squares[row][col].piece
-                if isinstance(piece, General) and piece.color == color:
-                    general_pos = (row, col)
-                    break
-        
-        if general_pos is None:
-            return True  # General not found (captured)
-        
-        # Check if any opponent piece can attack the general
-        opponent = 'black' if color == 'red' else 'red'
-        for row in range(ROWS):
-            for col in range(COLS):
-                piece = board.squares[row][col].piece
-                if piece is not None and piece.color == opponent:
-                    board.cal_move(piece, row, col, bool=False)
-                    for move in piece.moves_rival:
-                        if move.final.row == general_pos[0] and move.final.col == general_pos[1]:
-                            piece.clear_moves()
-                            return True
-                    piece.clear_moves()
-        
-        return False
-
-
-class DQN(nn.Module):
-    """Deep Q-Network for Xiangqi"""
-    
-    def __init__(self, input_size: int = 10*9*14, hidden_size: int = 512, output_size: int = 10*9*10*9):
-        super(DQN, self).__init__()
-        
-        self.network = nn.Sequential(
-            nn.Linear(input_size, hidden_size),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, output_size)
-        )
-    
-    def forward(self, x):
-        return self.network(x)
-
+parser = argparse.ArgumentParser(description="Choose hyperparameter")
+parser.add_argument('-e', '--episodes', type=str, default=100)
+parser.add_argument('-l', '--learning_rate', type=str, default=0.001)
+parser.add_argument('-me', '--epsilon_min', type=str, default=0.01)
+parser.add_argument('-d', '--epsilon_decay', type=str, default=0.9998)
+parser.add_argument('-b', '--batch_size', type=str, default=32)
+args = parser.parse_args()
 
 class XiangqiAgent:
     """DQN Agent for Xiangqi"""
     
-    def __init__(self, color: str, learning_rate: float = 0.001, epsilon: float = 1.0, 
-                 epsilon_decay: float = 0.9998, epsilon_min: float = 0.3, 
-                 memory_size: int = 10000, batch_size: int = 32):
+    def __init__(self, color: str, learning_rate: float = args.learning_rate, epsilon: float = 1.0, 
+                 epsilon_decay: float = args.epsilon_decay, epsilon_min: float = args.epsilon_min, 
+                 memory_size: int = 10000, batch_size: int = args.batch_size):
         self.color = color
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -371,7 +148,6 @@ class XiangqiAgent:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.epsilon = checkpoint['epsilon']
 
-
 class XiangqiTrainer:
     """Trainer for Xiangqi AI agents"""
     
@@ -384,7 +160,7 @@ class XiangqiTrainer:
         self.episode_rewards = {'red': [], 'black': []}
         self.win_rates = {'red': 0, 'black': 0, 'draw': 0}
         
-    def train(self, episodes: int, save_freq: int = 100, update_target_freq: int = 10):
+    def train(self, episodes: int = args.episodes, save_freq: int = 100, update_target_freq: int = 10):
         """Train the agents by playing against each other"""
         
         for episode in range(episodes):
@@ -527,7 +303,7 @@ class XiangqiTrainer:
                 print(f"{self.env.current_player} plays: {action.initial.row},{action.initial.col} -> {action.final.row},{action.final.col}")
         
         return self.env.winner if self.env.winner else "draw"
-
+    
 
 # Example usage
 if __name__ == "__main__":
@@ -536,7 +312,7 @@ if __name__ == "__main__":
     
     # Train the agents
     print("Starting training...")
-    trainer.train(episodes=50)
+    trainer.train()
     
     # Save final models
     trainer.save_models('models/final')
@@ -553,3 +329,4 @@ if __name__ == "__main__":
     print(f"Red wins: {results['red']}")
     print(f"Black wins: {results['black']}")
     print(f"Draws: {results['draw']}")
+    
