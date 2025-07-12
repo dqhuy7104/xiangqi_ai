@@ -16,145 +16,23 @@ from src.move import Move
 from src.square import Square
 from src.const import *
 from ai_agent import XiangqiEnvironment
-from ai_agent import DQN
+from ai_agent import XiangqiAgent
 
 parser = argparse.ArgumentParser(description="Choose hyperparameter")
-parser.add_argument('-e', '--episodes', type=str, default=100)
-parser.add_argument('-l', '--learning_rate', type=str, default=0.001)
-parser.add_argument('-me', '--epsilon_min', type=str, default=0.01)
-parser.add_argument('-d', '--epsilon_decay', type=str, default=0.9998)
-parser.add_argument('-b', '--batch_size', type=str, default=32)
+parser.add_argument('-e', '--episodes', type=int, default=100)
+parser.add_argument('-l', '--learning_rate', type=float, default=0.001)
+parser.add_argument('-me', '--epsilon_min', type=float, default=0.01)
+parser.add_argument('-d', '--epsilon_decay', type=float, default=0.9998)
+parser.add_argument('-b', '--batch_size', type=int, default=32)
 args = parser.parse_args()
-
-class XiangqiAgent:
-    """DQN Agent for Xiangqi"""
-    
-    def __init__(self, color: str, learning_rate: float = args.learning_rate, epsilon: float = 1.0, 
-                 epsilon_decay: float = args.epsilon_decay, epsilon_min: float = args.epsilon_min, 
-                 memory_size: int = 10000, batch_size: int = args.batch_size):
-        self.color = color
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        # Neural networks
-        self.q_network = DQN().to(self.device)
-        self.target_network = DQN().to(self.device)
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=learning_rate)
-        
-        # Training parameters
-        self.epsilon = epsilon
-        self.epsilon_decay = epsilon_decay
-        self.epsilon_min = epsilon_min
-        self.batch_size = batch_size
-        self.gamma = 0.95  # Discount factor
-        
-        # Experience replay
-        self.memory = deque(maxlen=memory_size)
-
-        
-        # Update target network
-        self.update_target_network()
-    
-    def update_target_network(self):
-        """Update target network with current network weights"""
-        self.target_network.load_state_dict(self.q_network.state_dict())
-    
-    def remember(self, state, action_index, reward, next_state, done):
-        """Store experience in replay buffer"""
-        self.memory.append((state, action_index, reward, next_state, done))
-    
-    def act(self, state, legal_moves: List[Move]) -> Move:
-        """Choose action using epsilon-greedy policy"""
-        if len(legal_moves) == 0:
-            return None
-        
-        if random.random() < self.epsilon:
-            return random.choice(legal_moves)
-        
-        # Get Q-values for all possible actions
-        state_tensor = torch.from_numpy(np.array(state)).float().unsqueeze(0).to(self.device)
-        q_values = self.q_network(state_tensor)
-        
-        # Convert legal moves to action indices and find best action
-        best_q_value = float('-inf')
-        best_move = None
-        
-        for move in legal_moves:
-            action_index = self.move_to_action_index(move)
-            q_value = q_values[0][action_index].item()
-            
-            if q_value > best_q_value:
-                best_q_value = q_value
-                best_move = move
-        
-        return best_move if best_move else random.choice(legal_moves)
-    
-    def move_to_action_index(self, move: Move) -> int:
-        """Convert move to action index"""
-        return move.initial.row * 9 * 10 * 9 + move.initial.col * 10 * 9 + move.final.row * 9 + move.final.col
-    
-    def action_index_to_move(self, action_index: int) -> Move:
-        """Convert action index to move"""
-        initial_row = action_index // (9 * 10 * 9)
-        remainder = action_index % (9 * 10 * 9)
-        initial_col = remainder // (10 * 9)
-        remainder = remainder % (10 * 9)
-        final_row = remainder // 9
-        final_col = remainder % 9
-        
-        return Move(Square(initial_row, initial_col), Square(final_row, final_col))
-    
-    def replay(self):
-        """Train the network on a batch of experiences"""
-        if len(self.memory) < self.batch_size:
-            return
-        
-        batch = random.sample(self.memory, self.batch_size)
-        states = torch.from_numpy(np.array([experience[0] for experience in batch])).float().to(self.device)
-        actions = torch.tensor([experience[1] for experience in batch], dtype=torch.long, device=self.device)
-        rewards = torch.tensor([experience[2] for experience in batch], dtype=torch.float32, device=self.device)
-        next_states = torch.from_numpy(np.array([experience[3] for experience in batch])).float().to(self.device)
-        dones = torch.BoolTensor([experience[4] for experience in batch]).to(self.device)
-        
-        current_q_values = self.q_network(states).gather(1, actions.unsqueeze(1))
-        next_q_values = self.target_network(next_states).max(1)[0].detach()
-        target_q_values = rewards + (self.gamma * next_q_values * ~dones)
-        
-        loss = nn.MSELoss()(current_q_values.squeeze(), target_q_values)
-        
-        self.optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), 1.0)  # Gradient clipping
-        self.optimizer.step()
-        
-        # Decay epsilon
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-    
-    def save_model(self, filepath: str):
-        """Save the trained model"""
-        torch.save({
-            'q_network_state_dict': self.q_network.state_dict(),
-            'target_network_state_dict': self.target_network.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'epsilon': self.epsilon,
-            'color': self.color
-        }, filepath)
-    
-    def load_model(self, filepath: str):
-        """Load a trained model"""
-        checkpoint = torch.load(filepath, map_location=self.device)
-        self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
-        self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint['epsilon']
 
 class XiangqiTrainer:
     """Trainer for Xiangqi AI agents"""
     
     def __init__(self):
         self.env = XiangqiEnvironment()
-        self.red_agent = XiangqiAgent('red')
-        self.black_agent = XiangqiAgent('black')
+        self.red_agent = XiangqiAgent('red', args.learning_rate, args.epsilon_decay, args.epsilon_min, args.batch_size)
+        self.black_agent = XiangqiAgent('black', args.learning_rate, args.epsilon_decay, args.epsilon_min, args.batch_size)
         
         # Training statistics
         self.episode_rewards = {'red': [], 'black': []}
@@ -264,11 +142,11 @@ class XiangqiTrainer:
         self.red_agent.load_model(f'{directory}/red_agent.pth')
         self.black_agent.load_model(f'{directory}/black_agent.pth')
     
-    def play_game(self, display: bool = False) -> str:
+    def play_game(self, display: bool = True) -> str:
         """Play a single game between the agents"""
         state = self.env.reset()
         move_count = 0
-        max_moves = 1000
+        max_moves = 500
         
         while not self.env.game_over and move_count < max_moves:
             current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
@@ -300,7 +178,7 @@ class XiangqiTrainer:
             move_count += 1
             
             if display:
-                print(f"{self.env.current_player} plays: {action.initial.row},{action.initial.col} -> {action.final.row},{action.final.col}")
+                print(f"{self.env.current_player} plays: {action.initial.row},{action.initial.col} -> {action.final.row},{action.final.col}, reward: {reward}")
         
         return self.env.winner if self.env.winner else "draw"
     
@@ -316,17 +194,7 @@ if __name__ == "__main__":
     
     # Save final models
     trainer.save_models('models/final')
+
+    print('Model saved at models/final')
     
-    # Play some test games
-    print("\nTesting trained agents...")
-    results = {'red': 0, 'black': 0, 'draw': 0}
-    
-    for i in range(10):
-        result = trainer.play_game()
-        results[result] += 1
-    
-    print(f"Test results over 10 games:")
-    print(f"Red wins: {results['red']}")
-    print(f"Black wins: {results['black']}")
-    print(f"Draws: {results['draw']}")
     

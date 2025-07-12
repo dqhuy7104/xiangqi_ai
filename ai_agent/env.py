@@ -120,16 +120,13 @@ class XiangqiEnvironment:
             }
             reward += piece_values.get(captured_piece.name, 0)
         
-        # Small reward for making a move (to encourage activity)
-        reward += 0.1
-        
         # Check if opponent is in checkmate after this move
         if cur_move < 200:
             opponent = 'black' if self.current_player == 'red' else 'red'
             if self.is_checkmate(opponent):
                 reward += 1000
             elif self.is_in_check(opponent):
-                reward += 1  # Reward for putting opponent in check
+                reward += 0.5  # Reward for putting opponent in check
         elif 200 <= cur_move < 1000:
             opponent = 'black' if self.current_player == 'red' else 'red'
             if self.is_checkmate(opponent):
@@ -137,7 +134,7 @@ class XiangqiEnvironment:
             elif self.is_in_check(opponent):
                 reward += 0 # Reward for putting opponent in check
             else:
-                reward -= 0.2
+                reward -= 0.5
         return reward
     
     def check_game_over(self) -> bool:

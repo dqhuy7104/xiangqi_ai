@@ -32,7 +32,7 @@ class Main:
         
         # AI setup
         self.ai_environment = XiangqiEnvironment()
-        self.ai_agent = XiangqiAgent(args.ai)  # AI plays as black
+        self.ai_agent = XiangqiAgent(args.ai, 0.001, 0.9998, 0.01, 32)  # AI plays as black
         self.human_color =  args.player  # Human plays as red
         
         # Try to load pre-trained model

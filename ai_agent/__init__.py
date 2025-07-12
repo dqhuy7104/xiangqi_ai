@@ -1,2 +1,2 @@
 from .env import XiangqiEnvironment
-from .model import DQN
+from .model import DRQN, XiangqiAgent
