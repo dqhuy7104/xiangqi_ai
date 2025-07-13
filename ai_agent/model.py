@@ -265,6 +265,8 @@ class XiangqiAgent:
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
+        return loss.item()
+
     def save_model(self, filepath: str):
         """Save the trained model"""
         torch.save({

@@ -76,6 +76,9 @@ class XiangqiEnvironment:
         if not self.is_valid_move(move):
             return self.get_state(), -10, True  # Invalid move penalty
         
+        # Store the player making the move BEFORE switching
+        moving_player = self.current_player
+        
         # Check if move captures a piece
         captured_piece = self.board.squares[move.final.row][move.final.col].piece
         
@@ -85,17 +88,17 @@ class XiangqiEnvironment:
         
         self.move_count += 1
         
-        # Calculate reward
-        reward = self.calculate_reward(captured_piece, cur_move)
+        # Calculate reward for the player who just moved
+        reward = self.calculate_reward(captured_piece, cur_move, moving_player)
         
-        # Check for game over conditions
-        done = self.check_game_over()
+        # Check for game over conditions BEFORE switching player
+        done = self.check_game_over_for_player(moving_player)
         
-        # Switch player
+        # Switch player AFTER everything else
         self.current_player = 'black' if self.current_player == 'red' else 'red'
         
         return self.get_state(), reward, done
-    
+
     def is_valid_move(self, move: Move) -> bool:
         """Check if a move is valid"""
         piece = self.board.squares[move.initial.row][move.initial.col].piece
@@ -108,8 +111,8 @@ class XiangqiEnvironment:
         
         return valid
     
-    def calculate_reward(self, captured_piece, cur_move) -> float:
-        """Calculate reward for the current move"""
+    def calculate_reward(self, captured_piece, cur_move, moving_player) -> float:
+        """Calculate reward for the moving player"""
         reward = 0
         
         # Reward for capturing pieces
@@ -121,36 +124,36 @@ class XiangqiEnvironment:
             reward += piece_values.get(captured_piece.name, 0)
         
         # Check if opponent is in checkmate after this move
+        opponent = 'black' if moving_player == 'red' else 'red'
+        
         if cur_move < 200:
-            opponent = 'black' if self.current_player == 'red' else 'red'
             if self.is_checkmate(opponent):
-                reward += 1000
+                reward -= 1000  # reward for winning
             elif self.is_in_check(opponent):
-                reward += 0.5  # Reward for putting opponent in check
+                reward += 0.5  # Small reward for putting opponent in check
         elif 200 <= cur_move < 1000:
-            opponent = 'black' if self.current_player == 'red' else 'red'
             if self.is_checkmate(opponent):
-                reward += 1000
+                reward -= 1000  # reward for winning
             elif self.is_in_check(opponent):
-                reward += 0 # Reward for putting opponent in check
+                reward += 0  # No reward for check in late game
             else:
-                reward -= 0.5
+                reward -= 0.8  # Small penalty for taking long progress
         return reward
     
-    def check_game_over(self) -> bool:
-        """Check if the game is over"""
+    def check_game_over_for_player(self, moving_player) -> bool:
+        """Check if the game is over after a player's move"""
         # Check for maximum moves (draw)
         if self.move_count >= self.max_moves:
             self.game_over = True
             self.winner = None  # Draw
             return True
         
-        # Check if current player (who just moved) has won
-        opponent = 'black' if self.current_player == 'red' else 'red'
+        # Check if the moving player has won (opponent in checkmate)
+        opponent = 'black' if moving_player == 'red' else 'red'
         
         if self.is_checkmate(opponent):
             self.game_over = True
-            self.winner = self.current_player  # Current player wins
+            self.winner = moving_player  # Moving player wins
             return True
         
         # Check for stalemate (no legal moves but not in check)
@@ -161,6 +164,10 @@ class XiangqiEnvironment:
                 return True
         
         return False
+    
+    def check_game_over(self) -> bool:
+        """Check if the game is over - kept for backward compatibility"""
+        return self.check_game_over_for_player(self.current_player)
     
     def is_checkmate(self, color: str) -> bool:
         """Check if a color is in checkmate"""

@@ -6,6 +6,7 @@ import random
 import copy
 from collections import deque
 import pickle
+import matplotlib.pyplot as plt
 import os
 import argparse
 from typing import List, Tuple, Optional
@@ -39,90 +40,92 @@ class XiangqiTrainer:
         self.win_rates = {'red': 0, 'black': 0, 'draw': 0}
         
     def train(self, episodes: int = args.episodes, save_freq: int = 100, update_target_freq: int = 10):
-        """Train the agents by playing against each other"""
-        
+        reward_history = []
+        loss_history = []
+
         for episode in range(episodes):
             state = self.env.reset()
-            total_rewards = {'red': 0, 'black': 0}
+            total_rewards = {'red': 1000, 'black': 1000}
+            losses = {'red': [], 'black': []}
             move_count = 0
-            max_moves_per_game = 1000  # Prevent infinite games
-            
+            max_moves_per_game = 500
+
             while not self.env.game_over and move_count < max_moves_per_game:
                 current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
-                
-                # Get legal moves
                 legal_moves = self.env.get_legal_moves(self.env.current_player)
-                
+
                 if len(legal_moves) == 0:
-                    # No legal moves available - game should end
                     self.env.game_over = True
-                    if self.env.is_checkmate(self.env.current_player):
-                        # Checkmate - opponent wins
+                    if self.env.is_in_check(self.env.current_player):
                         self.env.winner = 'black' if self.env.current_player == 'red' else 'red'
                     else:
-                        # Stalemate - draw
                         self.env.winner = None
                     break
 
-                # Agent chooses action
                 action = current_agent.act(state, legal_moves)
-                
                 if action is None:
                     break
-                
-                # Make move
+
                 next_state, reward, done = self.env.make_move(action, move_count)
-                
-                # Store experience
+
                 action_index = current_agent.move_to_action_index(action)
                 current_agent.remember(state, action_index, reward, next_state, done)
-                
+
                 total_rewards[self.env.current_player] += reward
                 state = next_state
                 move_count += 1
 
-                if not self.env.winner:
-                    total_rewards['red'] -= 200
-                    total_rewards['black'] -= 200
-
-                # Train the agent
                 if len(current_agent.memory) > current_agent.batch_size:
-                    current_agent.replay()
+                    loss = current_agent.replay()
+                    if loss is not None:
+                        losses[self.env.current_player].append(loss)
             
-            # Update statistics
+            if move_count > max_moves_per_game:
+                total_rewards['red'] -= 500
+                total_rewards['black'] -= 500
+
+            # Ghi nhận reward
             self.episode_rewards['red'].append(total_rewards['red'])
             self.episode_rewards['black'].append(total_rewards['black'])
-            
+
+            # Ghi nhận win-rate
             if self.env.winner == 'red':
                 self.win_rates['red'] += 1
             elif self.env.winner == 'black':
                 self.win_rates['black'] += 1
             else:
                 self.win_rates['draw'] += 1
-            
+
             # Update target networks
             if episode % update_target_freq == 0:
                 self.red_agent.update_target_network()
                 self.black_agent.update_target_network()
-            
+
             # Save models
             if episode % save_freq == 0 and episode > 0:
                 self.save_models(f'models/episode_{episode}')
-            
-            # Print progress
+
+            # Tính toán trung bình
+            avg_red_loss = np.mean(losses['red']) if losses['red'] else 0
+            avg_black_loss = np.mean(losses['black']) if losses['black'] else 0
+            avg_reward = (total_rewards['red'] + total_rewards['black']) / 2
+
+            reward_history.append(avg_reward)
+            loss_history.append((avg_red_loss + avg_black_loss) / 2)
+
+            # In thông tin
             total_games = episode + 1
-            red_rate = self.win_rates['red'] / total_games * 100
-            black_rate = self.win_rates['black'] / total_games * 100
-            draw_rate = self.win_rates['draw'] / total_games * 100
-            
             print(f"Episode {episode}:")
-            print(f"  Red wins: {red_rate:.1f}%")
-            print(f"  Black wins: {black_rate:.1f}%")
-            print(f"  Draws: {draw_rate:.1f}%")
-            print(f"  Red epsilon: {self.red_agent.epsilon:.3f}")
-            print(f"  Black epsilon: {self.black_agent.epsilon:.3f}")
+            print(f"  Red wins: {self.win_rates['red'] / total_games * 100:.1f}%")
+            print(f"  Black wins: {self.win_rates['black'] / total_games * 100:.1f}%")
+            print(f"  Draws: {self.win_rates['draw'] / total_games * 100:.1f}%")
             print(f"  Avg moves: {move_count}")
-            print('_________________________')
+            print(f"  Red reward: {total_rewards['red']:.1f} | Red loss: {avg_red_loss:.4f}")
+            print(f"  Black reward: {total_rewards['black']:.1f} | Black loss: {avg_black_loss:.4f}")
+            print("_________________________")
+
+        return reward_history, loss_history
+
 
     def save_models(self, directory: str):
         """Save both agent models"""
@@ -190,11 +193,33 @@ if __name__ == "__main__":
     
     # Train the agents
     print("Starting training...")
-    trainer.train()
-    
+    reward_history, loss_history = trainer.train()
+
     # Save final models
     trainer.save_models('models/final')
 
     print('Model saved at models/final')
     
-    
+    episodes = range(1, args.episodes + 1)
+    plt.figure(figsize=(10, 5))
+
+    # Vẽ Reward
+    plt.plot(episodes, reward_history, label='Avg Reward', color='blue')
+    plt.xlabel('Episode')
+    plt.ylabel('Value')
+    plt.title('Reward')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Vẽ Loss
+    plt.plot(episodes, loss_history, label='Avg Loss', color='orange')
+    plt.xlabel('Episode')
+    plt.ylabel('Loss')
+    plt.title('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
