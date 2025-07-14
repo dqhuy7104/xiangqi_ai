@@ -45,10 +45,10 @@ class XiangqiTrainer:
 
         for episode in range(episodes):
             state = self.env.reset()
-            total_rewards = {'red': 1000, 'black': 1000}
+            total_rewards = {'red': 0, 'black': 0}
             losses = {'red': [], 'black': []}
             move_count = 0
-            max_moves_per_game = 500
+            max_moves_per_game = 400
 
             while not self.env.game_over and move_count < max_moves_per_game:
                 current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
@@ -149,7 +149,7 @@ class XiangqiTrainer:
         """Play a single game between the agents"""
         state = self.env.reset()
         move_count = 0
-        max_moves = 500
+        max_moves = 400
         
         while not self.env.game_over and move_count < max_moves:
             current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
