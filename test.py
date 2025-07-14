@@ -15,7 +15,7 @@ trainer.load_models('models/final')
 print("\nTesting trained agents...")
 results = {'red': 0, 'black': 0, 'draw': 0}
 
-for i in range(1):
+for i in range(100):
     result = trainer.play_game()
     results[result] += 1
 
