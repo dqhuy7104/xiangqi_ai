@@ -131,7 +131,7 @@ class XiangqiEnvironment:
                 reward -= 1000  # reward for winning
             elif self.is_in_check(opponent):
                 reward += 0.5  # Small reward for putting opponent in check
-        elif 200 <= cur_move < 1000:
+        elif 200 <= cur_move < 500:
             if self.is_checkmate(opponent):
                 reward -= 1000  # reward for winning
             elif self.is_in_check(opponent):

@@ -45,10 +45,11 @@ class XiangqiTrainer:
 
         for episode in range(episodes):
             state = self.env.reset()
+            reward = {'red': 0, 'black': 0}
             total_rewards = {'red': 0, 'black': 0}
             losses = {'red': [], 'black': []}
             move_count = 0
-            max_moves_per_game = 500
+            max_moves_per_game = 10
 
             while not self.env.game_over and move_count < max_moves_per_game:
                 current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
@@ -66,23 +67,32 @@ class XiangqiTrainer:
                 if action is None:
                     break
 
-                next_state, reward, done = self.env.make_move(action, move_count)
+                next_state, reward[self.env.current_player], done = self.env.make_move(action, move_count)
+
+                move_count += 1
+                if move_count >= max_moves_per_game:
+                    current_agent = self.black_agent
+                    legal_moves = self.env.get_legal_moves('black')
+                    action = current_agent.act(state, legal_moves)
+                    next_state, reward['black'], done = self.env.make_move(action, move_count)
+                    reward['red'] -= 500
+                    reward['black'] -= 500
+                    action_index = current_agent.move_to_action_index(action)
+                    current_agent.remember(state, action_index, reward['black'], next_state, done)
+                    total_rewards['black'] += reward['black']
+                    print(reward['red'], reward['black'])
+
 
                 action_index = current_agent.move_to_action_index(action)
-                current_agent.remember(state, action_index, reward, next_state, done)
+                current_agent.remember(state, action_index, reward[self.env.current_player], next_state, done)
 
-                total_rewards[self.env.current_player] += reward
+                total_rewards[self.env.current_player] += reward[self.env.current_player]
                 state = next_state
-                move_count += 1
 
                 if len(current_agent.memory) > current_agent.batch_size:
                     loss = current_agent.replay()
                     if loss is not None:
                         losses[self.env.current_player].append(loss)
-            
-            if move_count >= max_moves_per_game:
-                total_rewards['red'] -= 500
-                total_rewards['black'] -= 500
 
             # Ghi nhận reward
             self.episode_rewards['red'].append(total_rewards['red'])
@@ -149,7 +159,7 @@ class XiangqiTrainer:
         """Play a single game between the agents"""
         state = self.env.reset()
         move_count = 0
-        max_moves = 500
+        max_moves = 400
         
         while not self.env.game_over and move_count < max_moves:
             current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
