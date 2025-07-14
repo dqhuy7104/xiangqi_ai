@@ -137,7 +137,7 @@ class XiangqiEnvironment:
             elif self.is_in_check(opponent):
                 reward += 0  # No reward for check in late game
             else:
-                reward -= 0.8  # Small penalty for taking long progress
+                reward -= 0.5  # Small penalty for taking long progress
         return reward
     
     def check_game_over_for_player(self, moving_player) -> bool:

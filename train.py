@@ -23,8 +23,8 @@ parser = argparse.ArgumentParser(description="Choose hyperparameter")
 parser.add_argument('-e', '--episodes', type=int, default=100)
 parser.add_argument('-l', '--learning_rate', type=float, default=0.001)
 parser.add_argument('-me', '--epsilon_min', type=float, default=0.01)
-parser.add_argument('-d', '--epsilon_decay', type=float, default=0.9998)
-parser.add_argument('-b', '--batch_size', type=int, default=32)
+parser.add_argument('-d', '--epsilon_decay', type=float, default=0.99997)
+parser.add_argument('-b', '--batch_size', type=int, default=16)
 args = parser.parse_args()
 
 class XiangqiTrainer:
@@ -48,7 +48,7 @@ class XiangqiTrainer:
             total_rewards = {'red': 0, 'black': 0}
             losses = {'red': [], 'black': []}
             move_count = 0
-            max_moves_per_game = 400
+            max_moves_per_game = 500
 
             while not self.env.game_over and move_count < max_moves_per_game:
                 current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
@@ -80,7 +80,7 @@ class XiangqiTrainer:
                     if loss is not None:
                         losses[self.env.current_player].append(loss)
             
-            if move_count > max_moves_per_game:
+            if move_count >= max_moves_per_game:
                 total_rewards['red'] -= 500
                 total_rewards['black'] -= 500
 
@@ -149,7 +149,7 @@ class XiangqiTrainer:
         """Play a single game between the agents"""
         state = self.env.reset()
         move_count = 0
-        max_moves = 400
+        max_moves = 500
         
         while not self.env.game_over and move_count < max_moves:
             current_agent = self.red_agent if self.env.current_player == 'red' else self.black_agent
